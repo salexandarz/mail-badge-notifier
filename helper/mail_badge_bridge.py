@@ -14,11 +14,43 @@ import signal
 import socket
 import struct
 import sys
+from pathlib import Path
 from urllib.parse import unquote
 
 # install.sh rewrites this line when you pick another mail app.
 APP_URI = "application://eu.betterbird.Betterbird.desktop"
 OBJECT_PATH = "/com/celestwatches/MailBadgeBridge"
+
+
+def get_target_uris():
+    """Dynamically find the primary APP_URI and all related .desktop files
+    in both ~/.local/share/applications/ and /usr/share/applications/
+    (covering both Plasma panel and Cairo-Dock entries) so badges update everywhere."""
+    uris = {APP_URI}
+
+    # Extract keyword (thunderbird or betterbird) from APP_URI
+    clean_uri = APP_URI.replace("application://", "").lower()
+    if "thunderbird" in clean_uri:
+        keyword = "thunderbird"
+    elif "betterbird" in clean_uri:
+        keyword = "betterbird"
+    else:
+        keyword = clean_uri.split(".")[0]
+
+    # Scan both local and system application directories
+    search_dirs = [
+        Path.home() / ".local" / "share" / "applications",
+        Path("/usr/share/applications")
+    ]
+
+    for app_dir in search_dirs:
+        if app_dir.is_dir():
+            for desktop_file in app_dir.glob("*.desktop"):
+                filename = desktop_file.name
+                if keyword in filename.lower():
+                    uris.add(f"application://{filename}")
+
+    return list(uris)
 
 
 # --- minimal D-Bus wire protocol (little endian) ---------------------------
@@ -157,18 +189,19 @@ class SessionBus:
             self.sock.setblocking(True)
 
     def emit_badge(self, count):
-        w = _W()
-        w.string(APP_URI)
-        props = [("count", "x", count), ("count-visible", "b", count > 0)]
+        for uri in get_target_uris():
+            w = _W()
+            w.string(uri)
+            props = [("count", "x", count), ("count-visible", "b", count > 0)]
 
-        def write_entry(p):
-            w.align(8)
-            w.string(p[0])
-            _variant(w, p[1], p[2])
+            def write_entry(p):
+                w.align(8)
+                w.string(p[0])
+                _variant(w, p[1], p[2])
 
-        w.array(8, props, write_entry)
-        self._send(4, OBJECT_PATH, "com.canonical.Unity.LauncherEntry", "Update",
-                   body_sig="sa{sv}", body=bytes(w.b))
+            w.array(8, props, write_entry)
+            self._send(4, OBJECT_PATH, "com.canonical.Unity.LauncherEntry", "Update",
+                       body_sig="sa{sv}", body=bytes(w.b))
 
 
 # --- native messaging ------------------------------------------------------
@@ -182,7 +215,7 @@ def read_message():
 
 
 def main():
-    # If Betterbird kills the helper instead of closing stdin, still clear the badge.
+    # If Betterbird/Thunderbird kills the helper instead of closing stdin, still clear the badge.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     bus = SessionBus()
     try:
@@ -193,7 +226,7 @@ def main():
             bus.emit_badge(max(0, int(msg.get("count", 0))))
     finally:
         try:
-            bus.emit_badge(0)  # Betterbird closed: hide the badge
+            bus.emit_badge(0)  # App closed: hide the badge
         except OSError:
             pass
 

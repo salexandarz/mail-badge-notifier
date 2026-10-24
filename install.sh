@@ -2,8 +2,10 @@
 # Mail Badge Bridge installer for Arch Linux (Headless Service + GUI Wrapper + Multi-environment support)
 #
 # Usage:
-#   ./install.sh --thunderbird             # Thunderbird (default)
-#   ./install.sh --desktop-file NAME       # Any custom .desktop launcher
+#   ./install.sh --thunderbird              # Thunderbird (default)
+#   ./install.sh --betterbird               # Betterbird
+#   ./install.sh --desktop-file NAME        # Any custom .desktop launcher
+
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -24,7 +26,16 @@ case "${1:-}" in
     ;;
   --desktop-file)
     DESKTOP_FILE="${2:?--desktop-file needs a name, e.g. org.mozilla.Thunderbird.desktop}"
-    APP_NAME="$(echo "$DESKTOP_FILE" | cut -d'.' -f1 | tr '[:upper:]' '[:lower:]')"
+
+    lower_file="$(echo "$DESKTOP_FILE" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$lower_file" == *thunderbird* ]]; then
+      APP_NAME="thunderbird"
+    elif [[ "$lower_file" == *betterbird* ]]; then
+      APP_NAME="betterbird"
+    else
+      APP_NAME="$(basename "$DESKTOP_FILE" .desktop | awk -F'.' '{print tolower($NF)}')"
+    fi
+
     SYS_BINARY="/usr/bin/$APP_NAME"
     ;;
   -h|--help) sed -n 2,12p "$0"; exit 0 ;;
@@ -130,7 +141,7 @@ EOF
 )
 
 for dir in "$HOME/.mozilla/native-messaging-hosts" \
-           "${XDG_CONFIG_HOME:-$HOME/.config}/mozilla/native-messaging-hosts"; do
+          "${XDG_CONFIG_HOME:-$HOME/.config}/mozilla/native-messaging-hosts"; do
   mkdir -p "$dir"
   printf '%s\n' "$MANIFEST" > "$dir/mail_badge_bridge.json"
 done
