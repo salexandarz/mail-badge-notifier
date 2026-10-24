@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Mail Badge Bridge installer for Arch Linux (Headless Service + GUI Wrapper + Multi-environment support)
+# Mail Badge Bridge User-Space Installer
+# Automatically sets up everything inside ~/mail-badge-notifier/
 #
 # Usage:
 #   ./install.sh --thunderbird              # Thunderbird (default)
@@ -7,7 +8,21 @@
 #   ./install.sh --desktop-file NAME        # Any custom .desktop launcher
 
 set -euo pipefail
-cd "$(dirname "$0")"
+
+# 0. Automatska instalacija/premeštanje u koreni korisnički folder
+TARGET_DIR="$HOME/mail-badge-notifier"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ "$SCRIPT_DIR" != "$TARGET_DIR" ]]; then
+  echo "==> Postavljanje i sinhronizacija fajlova u $TARGET_DIR..."
+  mkdir -p "$TARGET_DIR"
+  cp -r "$SCRIPT_DIR/"* "$TARGET_DIR/" 2>/dev/null || true
+  # Osiguraj da su dozvole ispravne za korisnika
+  chmod -R u+rwX "$TARGET_DIR"
+  cd "$TARGET_DIR"
+else
+  cd "$SCRIPT_DIR"
+fi
 
 DESKTOP_FILE="org.mozilla.Thunderbird.desktop"
 APP_NAME="thunderbird"
@@ -26,16 +41,7 @@ case "${1:-}" in
     ;;
   --desktop-file)
     DESKTOP_FILE="${2:?--desktop-file needs a name, e.g. org.mozilla.Thunderbird.desktop}"
-
-    lower_file="$(echo "$DESKTOP_FILE" | tr '[:upper:]' '[:lower:]')"
-    if [[ "$lower_file" == *thunderbird* ]]; then
-      APP_NAME="thunderbird"
-    elif [[ "$lower_file" == *betterbird* ]]; then
-      APP_NAME="betterbird"
-    else
-      APP_NAME="$(basename "$DESKTOP_FILE" .desktop | awk -F'.' '{print tolower($NF)}')"
-    fi
-
+    APP_NAME="$(echo "$DESKTOP_FILE" | cut -d'.' -f1 | tr '[:upper:]' '[:lower:]')"
     SYS_BINARY="/usr/bin/$APP_NAME"
     ;;
   -h|--help) sed -n 2,12p "$0"; exit 0 ;;
@@ -146,7 +152,7 @@ for dir in "$HOME/.mozilla/native-messaging-hosts" \
   printf '%s\n' "$MANIFEST" > "$dir/mail_badge_bridge.json"
 done
 
-# 7. Compile add-on package (.xpi)
+# 7. Compile add-on package (.xpi) directly in TARGET_DIR
 if [[ -d "addon" ]]; then
   (cd addon && rm -f ../mail-badge-bridge.xpi \
     && python3 -m zipfile -c ../mail-badge-bridge.xpi manifest.json background.js)
@@ -155,11 +161,12 @@ fi
 echo "=================================================="
 echo " Successfully installed and configured!"
 echo "=================================================="
+echo " Project Directory:  $TARGET_DIR"
 echo " Local Desktop file: $LOCAL_DESKTOP"
 echo " Wrapper script:     $WRAPPER"
 echo " Systemd service:    $APP_NAME.service (running in background)"
 echo " Native Helper:      $BIN"
-echo " Add-on package:     $(pwd)/mail-badge-bridge.xpi"
+echo " Add-on package:     $TARGET_DIR/mail-badge-bridge.xpi"
 echo
 echo "Next step: Open Thunderbird -> Add-ons and Themes -> Gear icon"
 echo "           -> Install Add-on From File... and select mail-badge-bridge.xpi"
