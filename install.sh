@@ -68,14 +68,22 @@ if [ -n "$MAIN_PY" ]; then
     echo "==> Created executable link in $BIN_DIR/mail-badge-bridge -> $(basename "$MAIN_PY")"
 fi
 
-# Find and install .desktop file to ~/.local/share/applications/ (recursive search)
-DESKTOP_SRC=$(find "$SRC_DIR" -name "*.desktop" | head -n 1)
-if [ -n "$DESKTOP_SRC" ]; then
-    cp "$DESKTOP_SRC" "$APPLICATIONS_DIR/"
+# Copy system .desktop file to user space and update Exec lines to absolute paths
+SYS_DESKTOP="/usr/share/applications/${SYS_BINARY}.desktop"
+LOCAL_DESKTOP="$APPLICATIONS_DIR/${SYS_BINARY}.desktop"
+
+if [ -f "$SYS_DESKTOP" ]; then
+    cp "$SYS_DESKTOP" "$LOCAL_DESKTOP"
+    
+    # Update Exec lines to use absolute paths
+    if grep -q "^Exec=" "$LOCAL_DESKTOP"; then
+        sed -i "s#^Exec=.*#Exec=/usr/bin/${SYS_BINARY}#g" "$LOCAL_DESKTOP" 2>/dev/null || true
+    fi
+
     if command -v update-desktop-database &> /dev/null; then
         update-desktop-database "$APPLICATIONS_DIR" &> /dev/null || true
     fi
-    echo "==> Installed .desktop file to $APPLICATIONS_DIR -> $(basename "$DESKTOP_SRC")"
+    echo "==> Installed and adjusted local .desktop file for $APP_NAME in $APPLICATIONS_DIR"
 fi
 
 # Generate or copy .xpi extension
