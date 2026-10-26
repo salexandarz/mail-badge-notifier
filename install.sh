@@ -58,6 +58,13 @@ else
     cp -r "$SRC_DIR"/* "$INSTALL_DIR/" 2>/dev/null || true
 fi
 
+# Kreiranje izvršnog simlinka u ~/.local/bin/ (Ekvivalent za /usr/bin/)
+if [ -f "$INSTALL_DIR/mail_badge_bridge.py" ]; then
+    chmod +x "$INSTALL_DIR/mail_badge_bridge.py"
+    ln -sf "$INSTALL_DIR/mail_badge_bridge.py" "$BIN_DIR/mail-badge-bridge"
+    echo "==> Created executable link in $BIN_DIR/mail-badge-bridge"
+fi
+
 # Generate or copy .xpi extension
 if [ -f "$SRC_DIR/mail-badge-bridge.xpi" ]; then
     cp "$SRC_DIR/mail-badge-bridge.xpi" "$INSTALL_DIR/"
@@ -73,7 +80,7 @@ fi
 # Configure and start systemd user service
 if [ -f "$SRC_DIR/mail-badge-notifier.service" ]; then
     cp "$SRC_DIR/mail-badge-notifier.service" "$SYSTEMD_DIR/"
-    
+
     echo "==> Configuring and starting systemd user service..."
     systemctl --user daemon-reload
     systemctl --user enable --now mail-badge-notifier.service
@@ -82,8 +89,9 @@ fi
 echo "========================================================================"
 echo " Installation completed successfully!"
 echo " Application located at: $INSTALL_DIR"
+echo " Executable command: mail-badge-bridge (in $BIN_DIR)"
 echo " Selected client: $APP_NAME"
 echo "========================================================================"
 echo " You can install the extension in $APP_NAME from file:"
-echo " $INSTALL_DIR/mail-badge-bridge.xpi"
+echo " $INSTALL_DIR/mail-badge-notifier.xpi"
 echo "========================================================================"
