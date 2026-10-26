@@ -1,114 +1,174 @@
 #!/usr/bin/env bash
-set -e
+# Mail Badge Bridge User-Space Installer
+# Automatically sets up everything inside ~/mail-badge-notifier/
+#
+# Usage:
+#   ./install.sh --thunderbird              # Thunderbird (default)
+#   ./install.sh --betterbird               # Betterbird
+#   ./install.sh --desktop-file NAME        # Any custom .desktop launcher
 
-# XDG Standard paths for user space
-INSTALL_DIR="$HOME/.local/share/mail-badge-notifier"
-BIN_DIR="$HOME/.local/bin"
-SYSTEMD_DIR="$HOME/.config/systemd/user"
-APPLICATIONS_DIR="$HOME/.local/share/applications"
+set -euo pipefail
 
-echo "==> Starting Mail Badge Notifier installation into user space..."
+# 0. Automatska instalacija/premeštanje u korenski korisnički folder
+TARGET_DIR="$HOME/mail-badge-notifier"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Smart client detection (Thunderbird / Betterbird)
-APP_NAME=""
-SYS_BINARY=""
+if [[ "$SCRIPT_DIR" != "$TARGET_DIR" ]]; then
+  echo "==> Postavljanje i sinhronizacija fajlova u $TARGET_DIR..."
+  mkdir -p "$TARGET_DIR"
+  cp -r "$SCRIPT_DIR/"* "$TARGET_DIR/" 2>/dev/null || true
+  chmod -R u+rwX "$TARGET_DIR"
+  cd "$TARGET_DIR"
+else
+  cd "$SCRIPT_DIR"
+fi
 
-for arg in "$@"; do
-    if [[ "$arg" == *betterbird* ]]; then
-        APP_NAME="betterbird"
-        SYS_BINARY="betterbird"
-        break
-    elif [[ "$arg" == *thunderbird* ]]; then
-        APP_NAME="thunderbird"
-        SYS_BINARY="thunderbird"
-        break
-    elif [ -f "$arg" ]; then
-        if grep -qi "betterbird" "$arg"; then
-            APP_NAME="betterbird"
-            SYS_BINARY="betterbird"
-            break
-        else
-            APP_NAME="thunderbird"
-            SYS_BINARY="thunderbird"
-            break
-        fi
-    fi
+DESKTOP_FILE="org.mozilla.Thunderbird.desktop"
+APP_NAME="thunderbird"
+SYS_BINARY="/usr/bin/thunderbird"
+
+case "${1:-}" in
+  ""|--thunderbird)
+    DESKTOP_FILE="org.mozilla.Thunderbird.desktop"
+    APP_NAME="thunderbird"
+    SYS_BINARY="/usr/bin/thunderbird"
+    ;;
+  --betterbird)
+    DESKTOP_FILE="eu.betterbird.Betterbird.desktop"
+    APP_NAME="betterbird"
+    SYS_BINARY="/usr/bin/betterbird"
+    ;;
+  --desktop-file)
+    DESKTOP_FILE="${2:?--desktop-file needs a name, e.g. org.mozilla.Thunderbird.desktop}"
+    APP_NAME="$(echo "$DESKTOP_FILE" | cut -d'.' -f1 | tr '[:upper:]' '[:lower:]')"
+    SYS_BINARY="/usr/bin/$APP_NAME"
+    ;;
+  -h|--help) sed -n 2,12p "$0"; exit 0 ;;
+  *) echo "Unknown option: $1 (try --help)" >&2; exit 1 ;;
+esac
+
+if [[ ! "$DESKTOP_FILE" =~ ^[A-Za-z0-9._-]+\.desktop$ ]]; then
+  echo "Invalid launcher name: $DESKTOP_FILE" >&2
+  exit 1
+fi
+
+echo "=================================================="
+echo " Installing Mail Badge Bridge for: $APP_NAME"
+echo "=================================================="
+
+# 1. Find system desktop file and copy it locally
+found=""
+for d in "$HOME/.local/share/applications" /usr/local/share/applications /usr/share/applications; do
+  [[ -f "$d/$DESKTOP_FILE" ]] && found="$d/$DESKTOP_FILE" && break
 done
 
-if [ -z "$APP_NAME" ]; then
-    APP_NAME="thunderbird"
-    SYS_BINARY="thunderbird"
-fi
+mkdir -p "$HOME/.local/share/applications"
+LOCAL_DESKTOP="$HOME/.local/share/applications/$DESKTOP_FILE"
 
-echo "==> Selected email client: $APP_NAME (Binary: $SYS_BINARY)"
-
-# Create necessary directories
-mkdir -p "$INSTALL_DIR"
-mkdir -p "$BIN_DIR"
-mkdir -p "$SYSTEMD_DIR"
-mkdir -p "$APPLICATIONS_DIR"
-
-SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Copy application files
-echo "==> Copying application files to $INSTALL_DIR..."
-if command -v rsync &> /dev/null; then
-    rsync -av --exclude='.git' --exclude='install.sh' --exclude='uninstall.sh' "$SRC_DIR/" "$INSTALL_DIR/"
+if [[ -n "$found" ]]; then
+  if [[ "$found" != "$LOCAL_DESKTOP" ]]; then
+    cp "$found" "$LOCAL_DESKTOP"
+  fi
 else
-    cp -r "$SRC_DIR"/* "$INSTALL_DIR/" 2>/dev/null || true
+  echo "Error: $DESKTOP_FILE not found in the system." >&2
+  exit 1
 fi
 
-# Setup executable symlink in ~/.local/bin/
-MAIN_PY=$(find "$INSTALL_DIR" -name "*.py" | head -n 1)
-if [ -n "$MAIN_PY" ]; then
-    chmod +x "$MAIN_PY"
-    ln -sf "$MAIN_PY" "$BIN_DIR/mail-badge-bridge"
-    echo "==> Created executable link in $BIN_DIR/mail-badge-bridge -> $(basename "$MAIN_PY")"
+# 2. Install Python Native Helper into ~/.local/bin
+BIN="$HOME/.local/bin/mail_badge_bridge.py"
+mkdir -p "$HOME/.local/bin"
+if [[ -f "helper/mail_badge_bridge.py" ]]; then
+  sed "s|^APP_URI = .*|APP_URI = \"application://$DESKTOP_FILE\"|" \
+    helper/mail_badge_bridge.py > "$BIN"
+elif [[ -f "mail_badge_bridge.py" ]]; then
+  sed "s|^APP_URI = .*|APP_URI = \"application://$DESKTOP_FILE\"|" \
+    mail_badge_bridge.py > "$BIN"
+else
+  echo "Error: mail_badge_bridge.py helper not found!" >&2
+  exit 1
+fi
+chmod 755 "$BIN"
+
+# 3. Create GUI Wrapper script in ~/.local/bin/ to handle Headless <-> GUI toggle
+WRAPPER="$HOME/.local/bin/$APP_NAME"
+cat <<EOF > "$WRAPPER"
+#!/usr/bin/env bash
+# 1. Stop background headless service
+systemctl --user stop $APP_NAME.service 2>/dev/null
+
+# 2. Ensure headless process has fully terminated
+pkill -f "$SYS_BINARY --headless" 2>/dev/null
+sleep 1
+
+# 3. Launch GUI app with all passed arguments
+$SYS_BINARY "\$@"
+
+# 4. Restart headless service in the background upon closing the GUI window
+systemctl --user start $APP_NAME.service 2>/dev/null
+EOF
+chmod +x "$WRAPPER"
+
+# 4. Update .desktop file to use absolute wrapper path
+sed -i "s|Exec=.*$APP_NAME|Exec=$WRAPPER|g" "$LOCAL_DESKTOP"
+update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+
+# 5. Create and start systemd user service for Headless background mode
+SYSTEMD_DIR="$HOME/.config/systemd/user"
+mkdir -p "$SYSTEMD_DIR"
+SERVICE_FILE="$SYSTEMD_DIR/$APP_NAME.service"
+
+cat <<EOF > "$SERVICE_FILE"
+[Unit]
+Description=${APP_NAME^} Headless Background Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$SYS_BINARY --headless -no-remote
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now "$APP_NAME.service" 2>/dev/null || true
+
+# 6. Set up Native Messaging Manifest for Thunderbird/Firefox
+MANIFEST=$(cat <<EOF
+{
+  "name": "mail_badge_bridge",
+  "description": "Mail Badge Bridge helper",
+  "path": "$BIN",
+  "type": "stdio",
+  "allowed_extensions": ["mail-badge-bridge@celest-watches.com"]
+}
+EOF
+)
+
+for dir in "$HOME/.mozilla/native-messaging-hosts" \
+         "${XDG_CONFIG_HOME:-$HOME/.config}/mozilla/native-messaging-hosts"; do
+  mkdir -p "$dir"
+  printf '%s\n' "$MANIFEST" > "$dir/mail_badge_bridge.json"
+done
+
+# 7. Compile add-on package (.xpi) directly in TARGET_DIR
+if [[ -d "addon" ]]; then
+  (cd addon && rm -f ../mail-badge-bridge.xpi \
+    && python3 -m zipfile -c ../mail-badge-bridge.xpi manifest.json background.js)
+elif [[ -f "manifest.json" && -f "background.js" ]]; then
+  rm -f mail-badge-bridge.xpi
+  python3 -m zipfile -c mail-badge-bridge.xpi manifest.json background.js
 fi
 
-# Dynamically find system .desktop file and override it in ~/.local/share/applications/
-SYS_DESKTOP=$(find /usr/share/applications -maxdepth 1 -iname "*${SYS_BINARY}*.desktop" | head -n 1)
-LOCAL_DESKTOP="$APPLICATIONS_DIR/${SYS_BINARY}.desktop"
-
-if [ -n "$SYS_DESKTOP" ] && [ -f "$SYS_DESKTOP" ]; then
-    cp "$SYS_DESKTOP" "$LOCAL_DESKTOP"
-    
-    # Force absolute path and %u parameter in Exec line
-    if grep -q "^Exec=" "$LOCAL_DESKTOP"; then
-        sed -i "s#^Exec=.*#Exec=/usr/bin/${SYS_BINARY} %u#g" "$LOCAL_DESKTOP" 2>/dev/null || true
-    fi
-
-    if command -v update-desktop-database &> /dev/null; then
-        update-desktop-database "$APPLICATIONS_DIR" &> /dev/null || true
-    fi
-    echo "==> Installed and adjusted local .desktop file for $APP_NAME in $APPLICATIONS_DIR"
-fi
-
-# Generate or copy .xpi extension
-if [ -f "$SRC_DIR/mail-badge-bridge.xpi" ]; then
-    cp "$SRC_DIR/mail-badge-bridge.xpi" "$INSTALL_DIR/"
-elif [ -d "$SRC_DIR/extension" ]; then
-    echo "==> Packing browser extension into .xpi..."
-    cd "$SRC_DIR/extension"
-    if command -v zip &> /dev/null; then
-        zip -r "$INSTALL_DIR/mail-badge-bridge.xpi" * > /dev/null
-    fi
-    cd - > /dev/null
-fi
-
-# Configure and start systemd user service
-SERVICE_SRC=$(find "$SRC_DIR" -name "*.service" | head -n 1)
-if [ -n "$SERVICE_SRC" ]; then
-    cp "$SERVICE_SRC" "$SYSTEMD_DIR/"
-    
-    echo "==> Configuring and starting systemd user service..."
-    systemctl --user daemon-reload
-    systemctl --user enable --now "$(basename "$SERVICE_SRC")"
-fi
-
-echo "========================================================================"
-echo " Installation completed successfully!"
-echo " Application located at: $INSTALL_DIR"
-echo " Executable command: mail-badge-bridge (in $BIN_DIR)"
-echo " Selected client: $APP_NAME"
-echo "========================================================================"
+echo "=================================================="
+echo " Successfully installed and configured!"
+echo "=================================================="
+echo " Project Directory:  $TARGET_DIR"
+echo " Local Desktop file: $LOCAL_DESKTOP"
+echo " Wrapper script:     $WRAPPER"
+echo " Systemd service:    $APP_NAME.service (running in background)"
+echo " Native Helper:      $BIN"
+echo " Add-on package:     $TARGET_DIR/mail-badge-bridge.x
