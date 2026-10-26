@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 # Mail Badge Bridge User-Space Installer
 # Automatically sets up everything inside ~/mail-badge-notifier/
-#
-# Usage:
-#   ./install.sh --thunderbird              # Thunderbird (default)
-#   ./install.sh --betterbird               # Betterbird
-#   ./install.sh --desktop-file NAME        # Any custom .desktop launcher
 
 set -euo pipefail
 
@@ -91,21 +86,24 @@ chmod 755 "$BIN"
 
 # 3. Create GUI Wrapper script in ~/.local/bin/ to handle Headless <-> GUI toggle
 WRAPPER="$HOME/.local/bin/$APP_NAME"
-cat <<EOF > "$WRAPPER"
+cat << 'EOF_WRAPPER' > "$WRAPPER"
 #!/usr/bin/env bash
 # 1. Stop background headless service
-systemctl --user stop $APP_NAME.service 2>/dev/null
+systemctl --user stop APP_NAME_PLACEHOLDER.service 2>/dev/null
 
 # 2. Ensure headless process has fully terminated
-pkill -f "$SYS_BINARY --headless" 2>/dev/null
+pkill -f "SYS_BINARY_PLACEHOLDER --headless" 2>/dev/null
 sleep 1
 
 # 3. Launch GUI app with all passed arguments
-$SYS_BINARY "\$@"
+SYS_BINARY_PLACEHOLDER "$@"
 
 # 4. Restart headless service in the background upon closing the GUI window
-systemctl --user start $APP_NAME.service 2>/dev/null
-EOF
+systemctl --user start APP_NAME_PLACEHOLDER.service 2>/dev/null
+EOF_WRAPPER
+
+sed -i "s|APP_NAME_PLACEHOLDER|$APP_NAME|g" "$WRAPPER"
+sed -i "s|SYS_BINARY_PLACEHOLDER|$SYS_BINARY|g" "$WRAPPER"
 chmod +x "$WRAPPER"
 
 # 4. Update .desktop file to use absolute wrapper path
@@ -117,36 +115,40 @@ SYSTEMD_DIR="$HOME/.config/systemd/user"
 mkdir -p "$SYSTEMD_DIR"
 SERVICE_FILE="$SYSTEMD_DIR/$APP_NAME.service"
 
-cat <<EOF > "$SERVICE_FILE"
+cat << 'EOF_SERVICE' > "$SERVICE_FILE"
 [Unit]
-Description=${APP_NAME^} Headless Background Service
+Description=APP_NAME_CAP Headless Background Service
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=$SYS_BINARY --headless -no-remote
+ExecStart=SYS_BINARY_PLACEHOLDER --headless -no-remote
 Restart=on-failure
 RestartSec=10
 
 [Install]
 WantedBy=default.target
-EOF
+EOF_SERVICE
+
+sed -i "s|APP_NAME_CAP|${APP_NAME^}|g" "$SERVICE_FILE"
+sed -i "s|SYS_BINARY_PLACEHOLDER|$SYS_BINARY|g" "$SERVICE_FILE"
 
 systemctl --user daemon-reload
 systemctl --user enable --now "$APP_NAME.service" 2>/dev/null || true
 
 # 6. Set up Native Messaging Manifest for Thunderbird/Firefox
-MANIFEST=$(cat <<EOF
+MANIFEST=$(cat << 'EOF_MANIFEST'
 {
   "name": "mail_badge_bridge",
   "description": "Mail Badge Bridge helper",
-  "path": "$BIN",
+  "path": "BIN_PATH",
   "type": "stdio",
   "allowed_extensions": ["mail-badge-bridge@celest-watches.com"]
 }
-EOF
+EOF_MANIFEST
 )
+MANIFEST="${MANIFEST//BIN_PATH/$BIN}"
 
 for dir in "$HOME/.mozilla/native-messaging-hosts" \
          "${XDG_CONFIG_HOME:-$HOME/.config}/mozilla/native-messaging-hosts"; do
@@ -171,4 +173,4 @@ echo " Local Desktop file: $LOCAL_DESKTOP"
 echo " Wrapper script:     $WRAPPER"
 echo " Systemd service:    $APP_NAME.service (running in background)"
 echo " Native Helper:      $BIN"
-echo " Add-on package:     $TARGET_DIR/mail-badge-bridge.x
+echo " Add-on package:     $TARGET_DIR/mail-badge-bridge.xpi"
