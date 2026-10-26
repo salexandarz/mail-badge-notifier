@@ -5,6 +5,7 @@ set -e
 INSTALL_DIR="$HOME/.local/share/mail-badge-notifier"
 BIN_DIR="$HOME/.local/bin"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
+APPLICATIONS_DIR="$HOME/.local/share/applications"
 
 echo "==> Starting Mail Badge Notifier installation into user space..."
 
@@ -46,6 +47,7 @@ echo "==> Selected email client: $APP_NAME (Binary: $SYS_BINARY)"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$BIN_DIR"
 mkdir -p "$SYSTEMD_DIR"
+mkdir -p "$APPLICATIONS_DIR"
 
 # Determine location where the script is executed from
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -58,11 +60,22 @@ else
     cp -r "$SRC_DIR"/* "$INSTALL_DIR/" 2>/dev/null || true
 fi
 
-# Kreiranje izvršnog simlinka u ~/.local/bin/ (Ekvivalent za /usr/bin/)
-if [ -f "$INSTALL_DIR/mail_badge_bridge.py" ]; then
-    chmod +x "$INSTALL_DIR/mail_badge_bridge.py"
-    ln -sf "$INSTALL_DIR/mail_badge_bridge.py" "$BIN_DIR/mail-badge-bridge"
-    echo "==> Created executable link in $BIN_DIR/mail-badge-bridge"
+# Automatically find and set up executable symlink in ~/.local/bin/
+MAIN_PY=$(find "$INSTALL_DIR" -maxdepth 1 -name "*.py" | head -n 1)
+if [ -n "$MAIN_PY" ]; then
+    chmod +x "$MAIN_PY"
+    ln -sf "$MAIN_PY" "$BIN_DIR/mail-badge-bridge"
+    echo "==> Created executable link in $BIN_DIR/mail-badge-bridge -> $(basename "$MAIN_PY")"
+fi
+
+# Find and install .desktop file to ~/.local/share/applications/
+DESKTOP_SRC=$(find "$SRC_DIR" -maxdepth 1 -name "*.desktop" | head -n 1)
+if [ -n "$DESKTOP_SRC" ]; then
+    cp "$DESKTOP_SRC" "$APPLICATIONS_DIR/"
+    if command -v update-desktop-database &> /dev/null; then
+        update-desktop-database "$APPLICATIONS_DIR" &> /dev/null || true
+    fi
+    echo "==> Installed .desktop file to $APPLICATIONS_DIR -> $(basename "$DESKTOP_SRC")"
 fi
 
 # Generate or copy .xpi extension
@@ -80,7 +93,7 @@ fi
 # Configure and start systemd user service
 if [ -f "$SRC_DIR/mail-badge-notifier.service" ]; then
     cp "$SRC_DIR/mail-badge-notifier.service" "$SYSTEMD_DIR/"
-
+    
     echo "==> Configuring and starting systemd user service..."
     systemctl --user daemon-reload
     systemctl --user enable --now mail-badge-notifier.service
