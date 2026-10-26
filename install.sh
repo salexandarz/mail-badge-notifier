@@ -68,11 +68,24 @@ if [ -n "$MAIN_PY" ]; then
     echo "==> Created executable link in $BIN_DIR/mail-badge-bridge -> $(basename "$MAIN_PY")"
 fi
 
-# Copy system .desktop file to user space and update Exec lines to absolute paths
-SYS_DESKTOP="/usr/share/applications/${SYS_BINARY}.desktop"
+# Copy system .desktop file to user space (handling Arch-specific naming) and update Exec lines
+SYS_DESKTOP=""
+if [ "$SYS_BINARY" = "thunderbird" ]; then
+    if [ -f "/usr/share/applications/org.mozilla.Thunderbird.desktop" ]; then
+        SYS_DESKTOP="/usr/share/applications/org.mozilla.Thunderbird.desktop"
+    elif [ -f "/usr/share/applications/thunderbird.desktop" ]; then
+        SYS_DESKTOP="/usr/share/applications/thunderbird.desktop"
+    fi
+else
+    if [ -f "/usr/share/applications/${SYS_BINARY}.desktop" ]; then
+        SYS_DESKTOP="/usr/share/applications/${SYS_BINARY}.desktop"
+    fi
+fi
+
+# Target name should match the client binary or keep system name
 LOCAL_DESKTOP="$APPLICATIONS_DIR/${SYS_BINARY}.desktop"
 
-if [ -f "$SYS_DESKTOP" ]; then
+if [ -n "$SYS_DESKTOP" ] && [ -f "$SYS_DESKTOP" ]; then
     cp "$SYS_DESKTOP" "$LOCAL_DESKTOP"
     
     # Update Exec lines to use absolute paths
