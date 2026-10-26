@@ -9,7 +9,7 @@ APPLICATIONS_DIR="$HOME/.local/share/applications"
 
 echo "==> Starting Mail Badge Notifier installation into user space..."
 
-# Smart client detection (Thunderbird / Betterbird) without brittle cut usage
+# Smart client detection (Thunderbird / Betterbird)
 APP_NAME=""
 SYS_BINARY=""
 
@@ -35,7 +35,6 @@ for arg in "$@"; do
     fi
 done
 
-# Default to Thunderbird if arguments aren't recognized
 if [ -z "$APP_NAME" ]; then
     APP_NAME="thunderbird"
     SYS_BINARY="thunderbird"
@@ -43,16 +42,15 @@ fi
 
 echo "==> Selected email client: $APP_NAME (Binary: $SYS_BINARY)"
 
-# Create necessary directories if they don't exist
+# Create necessary directories
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$BIN_DIR"
 mkdir -p "$SYSTEMD_DIR"
 mkdir -p "$APPLICATIONS_DIR"
 
-# Determine location where the script is executed from
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Copy application files to XDG data folder (keeping git folder untouched)
+# Copy application files
 echo "==> Copying application files to $INSTALL_DIR..."
 if command -v rsync &> /dev/null; then
     rsync -av --exclude='.git' --exclude='install.sh' --exclude='uninstall.sh' "$SRC_DIR/" "$INSTALL_DIR/"
@@ -60,7 +58,7 @@ else
     cp -r "$SRC_DIR"/* "$INSTALL_DIR/" 2>/dev/null || true
 fi
 
-# Automatically find and set up executable symlink in ~/.local/bin/ (recursive search)
+# Setup executable symlink in ~/.local/bin/
 MAIN_PY=$(find "$INSTALL_DIR" -name "*.py" | head -n 1)
 if [ -n "$MAIN_PY" ]; then
     chmod +x "$MAIN_PY"
@@ -68,29 +66,16 @@ if [ -n "$MAIN_PY" ]; then
     echo "==> Created executable link in $BIN_DIR/mail-badge-bridge -> $(basename "$MAIN_PY")"
 fi
 
-# Copy system .desktop file to user space (handling Arch-specific naming) and update Exec lines
-SYS_DESKTOP=""
-if [ "$SYS_BINARY" = "thunderbird" ]; then
-    if [ -f "/usr/share/applications/org.mozilla.Thunderbird.desktop" ]; then
-        SYS_DESKTOP="/usr/share/applications/org.mozilla.Thunderbird.desktop"
-    elif [ -f "/usr/share/applications/thunderbird.desktop" ]; then
-        SYS_DESKTOP="/usr/share/applications/thunderbird.desktop"
-    fi
-else
-    if [ -f "/usr/share/applications/${SYS_BINARY}.desktop" ]; then
-        SYS_DESKTOP="/usr/share/applications/${SYS_BINARY}.desktop"
-    fi
-fi
-
-# Target name should match the client binary or keep system name
+# Dynamically find system .desktop file and override it in ~/.local/share/applications/
+SYS_DESKTOP=$(find /usr/share/applications -maxdepth 1 -iname "*${SYS_BINARY}*.desktop" | head -n 1)
 LOCAL_DESKTOP="$APPLICATIONS_DIR/${SYS_BINARY}.desktop"
 
 if [ -n "$SYS_DESKTOP" ] && [ -f "$SYS_DESKTOP" ]; then
     cp "$SYS_DESKTOP" "$LOCAL_DESKTOP"
     
-    # Update Exec lines to use absolute paths
+    # Force absolute path and %u parameter in Exec line
     if grep -q "^Exec=" "$LOCAL_DESKTOP"; then
-        sed -i "s#^Exec=.*#Exec=/usr/bin/${SYS_BINARY}#g" "$LOCAL_DESKTOP" 2>/dev/null || true
+        sed -i "s#^Exec=.*#Exec=/usr/bin/${SYS_BINARY} %u#g" "$LOCAL_DESKTOP" 2>/dev/null || true
     fi
 
     if command -v update-desktop-database &> /dev/null; then
@@ -111,7 +96,7 @@ elif [ -d "$SRC_DIR/extension" ]; then
     cd - > /dev/null
 fi
 
-# Configure and start systemd user service (recursive search for .service)
+# Configure and start systemd user service
 SERVICE_SRC=$(find "$SRC_DIR" -name "*.service" | head -n 1)
 if [ -n "$SERVICE_SRC" ]; then
     cp "$SERVICE_SRC" "$SYSTEMD_DIR/"
@@ -126,7 +111,4 @@ echo " Installation completed successfully!"
 echo " Application located at: $INSTALL_DIR"
 echo " Executable command: mail-badge-bridge (in $BIN_DIR)"
 echo " Selected client: $APP_NAME"
-echo "========================================================================"
-echo " You can install the extension in $APP_NAME from file:"
-echo " $INSTALL_DIR/mail-badge-bridge.xpi"
 echo "========================================================================"
