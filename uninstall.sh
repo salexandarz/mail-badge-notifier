@@ -1,30 +1,36 @@
 #!/usr/bin/env bash
-# Mail Badge Bridge uninstaller for Arch Linux
-#
-# Usage:
-#   ./uninstall.sh                    # Thunderbird (default)
-#   ./uninstall.sh --thunderbird      # Thunderbird
-#   ./uninstall.sh --desktop-file NAME # Any custom .desktop launcher
+# Mail Badge Bridge User-Space Uninstaller (XDG Compliant)
 set -euo pipefail
-cd "$(dirname "$0")"
+
+TARGET_DIR="$HOME/.local/share/mail-badge-notifier"
+BIN_DIR="$HOME/.local/bin"
+SYSTEMD_DIR="$HOME/.config/systemd/user"
+APPLICATIONS_DIR="$HOME/.local/share/applications"
 
 DESKTOP_FILE="org.mozilla.Thunderbird.desktop"
 APP_NAME="thunderbird"
+SYS_BINARY="/usr/bin/thunderbird"
 
 case "${1:-}" in
   ""|--thunderbird)
     DESKTOP_FILE="org.mozilla.Thunderbird.desktop"
     APP_NAME="thunderbird"
+    SYS_BINARY="/usr/bin/thunderbird"
     ;;
   --betterbird)
     DESKTOP_FILE="eu.betterbird.Betterbird.desktop"
     APP_NAME="betterbird"
+    SYS_BINARY="/usr/bin/betterbird"
     ;;
   --desktop-file)
-    DESKTOP_FILE="${2:?--desktop-file needs a name}"
+    DESKTOP_FILE="${2:?--desktop-file needs a name, e.g. org.mozilla.Thunderbird.desktop}"
     APP_NAME="$(echo "$DESKTOP_FILE" | cut -d'.' -f1 | tr '[:upper:]' '[:lower:]')"
+    SYS_BINARY="/usr/bin/$APP_NAME"
     ;;
-  -h|--help) sed -n 2,12p "$0"; exit 0 ;;
+  -h|--help)
+    echo "Usage: ./uninstall.sh [--thunderbird | --betterbird | --desktop-file NAME]"
+    exit 0
+    ;;
   *) echo "Unknown option: $1 (try --help)" >&2; exit 1 ;;
 esac
 
@@ -32,30 +38,67 @@ echo "=================================================="
 echo " Uninstalling Mail Badge Bridge for: $APP_NAME"
 echo "=================================================="
 
-echo "-> Stopping and removing systemd headless service..."
-systemctl --user stop "$APP_NAME.service" 2>/dev/null || true
-systemctl --user disable "$APP_NAME.service" 2>/dev/null || true
-rm -f "$HOME/.config/systemd/user/$APP_NAME.service"
-systemctl --user daemon-reload 2>/dev/null || true
+# 1. Stop and disable systemd user service
+if systemctl --user --quiet is-active "$APP_NAME.service" 2>/dev/null; then
+  echo "==> Stopping systemd service: $APP_NAME.service..."
+  systemctl --user stop "$APP_NAME.service" || true
+fi
+if systemctl --user --quiet is-enabled "$APP_NAME.service" 2>/dev/null; then
+  echo "==> Disabling systemd service: $APP_NAME.service..."
+  systemctl --user disable "$APP_NAME.service" || true
+fi
 
-echo "-> Killing remaining application and helper processes..."
-pkill -9 "$APP_NAME" 2>/dev/null || true
-pkill -f "mail_badge_bridge" 2>/dev/null || true
+SERVICE_FILE="$SYSTEMD_DIR/$APP_NAME.service"
+if [[ -f "$SERVICE_FILE" ]]; then
+  rm -f "$SERVICE_FILE"
+  echo "==> Removed service file: $SERVICE_FILE"
+  systemctl --user daemon-reload || true
+fi
 
-echo "-> Removing wrapper and python helper from ~/.local/bin..."
-rm -f "$HOME/.local/bin/$APP_NAME"
-rm -f "$HOME/.local/bin/mail_badge_bridge.py"
+# 2. Kill remaining headless processes
+pkill -f "$SYS_BINARY --headless" 2>/dev/null || true
 
-echo "-> Removing local desktop launcher..."
-rm -f "$HOME/.local/share/applications/$DESKTOP_FILE"
-update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+# 3. Remove wrapper and symlink from BIN_DIR
+if [[ -f "$BIN_DIR/$APP_NAME" ]]; then
+  rm -f "$BIN_DIR/$APP_NAME"
+  echo "==> Removed wrapper script: $BIN_DIR/$APP_NAME"
+fi
 
-echo "-> Removing native messaging manifests..."
-rm -f "$HOME/.mozilla/native-messaging-hosts/mail_badge_bridge.json"
-rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/mozilla/native-messaging-hosts/mail_badge_bridge.json"
+if [[ -L "$BIN_DIR/mail-badge-bridge" || -f "$BIN_DIR/mail-badge-bridge" ]]; then
+  rm -f "$BIN_DIR/mail-badge-bridge"
+  echo "==> Removed bridge binary/symlink: $BIN_DIR/mail-badge-bridge"
+fi
 
-echo "-> Removing compiled .xpi add-on..."
-rm -f "mail-badge-bridge.xpi"
+# 4. Remove local desktop file and update desktop database
+LOCAL_DESKTOP="$APPLICATIONS_DIR/$DESKTOP_FILE"
+if [[ -f "$LOCAL_DESKTOP" ]]; then
+  rm -f "$LOCAL_DESKTOP"
+  echo "==> Removed local desktop file: $LOCAL_DESKTOP"
+  if command -v update-desktop-database &> /dev/null; then
+    update-desktop-database "$APPLICATIONS_DIR" &> /dev/null || true
+  fi
+fi
+
+# 5. Remove Native Messaging Manifests
+for dir in "$HOME/.mozilla/native-messaging-hosts" \
+         "${XDG_CONFIG_HOME:-$HOME/.config}/mozilla/native-messaging-hosts"; do
+  MANIFEST_FILE="$dir/mail_badge_bridge.json"
+  if [[ -f "$MANIFEST_FILE" ]]; then
+    rm -f "$MANIFEST_FILE"
+    echo "==> Removed native messaging manifest: $MANIFEST_FILE"
+  fi
+done
+
+# 6. Remove XDG data target directory
+if [[ -d "$TARGET_DIR" ]]; then
+  rm -rf "$TARGET_DIR"
+  echo "==> Removed target XDG data directory: $TARGET_DIR"
+fi
+
+# Clean up any root-level compiled .xpi file if present
+if [[ -f "mail-badge-bridge.xpi" ]]; then
+  rm -f "mail-badge-bridge.xpi"
+fi
 
 echo "=================================================="
 echo " Uninstallation completed successfully!"
