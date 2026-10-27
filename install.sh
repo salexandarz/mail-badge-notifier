@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
-# Mail Badge Bridge User-Space Installer
-# Automatically sets up everything inside ~/mail-badge-notifier/
-
+# Mail Badge Bridge User-Space Installer (XDG Compliant)
 set -euo pipefail
 
-# 0. Automatska instalacija/premeštanje u korenski korisnički folder
-TARGET_DIR="$HOME/mail-badge-notifier"
+TARGET_DIR="$HOME/.local/share/mail-badge-notifier"
+BIN_DIR="$HOME/.local/bin"
+SYSTEMD_DIR="$HOME/.config/systemd/user"
+APPLICATIONS_DIR="$HOME/.local/share/applications"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "$SCRIPT_DIR" != "$TARGET_DIR" ]]; then
-  echo "==> Postavljanje i sinhronizacija fajlova u $TARGET_DIR..."
+  echo "==> Syncing project files to XDG data directory: $TARGET_DIR..."
   mkdir -p "$TARGET_DIR"
-  cp -r "$SCRIPT_DIR/"* "$TARGET_DIR/" 2>/dev/null || true
+  if command -v rsync &> /dev/null; then
+    rsync -av --exclude='.git' --exclude='install.sh' --exclude='uninstall.sh' "$SCRIPT_DIR/" "$TARGET_DIR/"
+  else
+    cp -r "$SCRIPT_DIR"/* "$TARGET_DIR/" 2>/dev/null || true
+  fi
   chmod -R u+rwX "$TARGET_DIR"
   cd "$TARGET_DIR"
 else
@@ -42,63 +47,20 @@ case "${1:-}" in
   *) echo "Unknown option: $1 (try --help)" >&2; exit 1 ;;
 esac
 
-if [[ ! "$DESKTOP_FILE" =~ ^[A-Za-z0-9._-]+\.desktop$ ]]; then
-  echo "Invalid launcher name: $DESKTOP_FILE" >&2
-  exit 1
-fi
-
 echo "=================================================="
 echo " Installing Mail Badge Bridge for: $APP_NAME"
 echo "=================================================="
 
-# 1. Find system desktop file and copy it locally
-found=""
-for d in "$HOME/.local/share/applications" /usr/local/share/applications /usr/share/applications; do
-  [[ -f "$d/$DESKTOP_FILE" ]] && found="$d/$DESKTOP_FILE" && break
-done
+# 1. Create GUI Wrapper script in ~/.local/bin/ first
+WRAPPER="$BIN_DIR/$APP_NAME"
+mkdir -p "$BIN_DIR"
 
-mkdir -p "$HOME/.local/share/applications"
-LOCAL_DESKTOP="$HOME/.local/share/applications/$DESKTOP_FILE"
-
-if [[ -n "$found" ]]; then
-  if [[ "$found" != "$LOCAL_DESKTOP" ]]; then
-    cp "$found" "$LOCAL_DESKTOP"
-  fi
-else
-  echo "Error: $DESKTOP_FILE not found in the system." >&2
-  exit 1
-fi
-
-# 2. Install Python Native Helper into ~/.local/bin
-BIN="$HOME/.local/bin/mail_badge_bridge.py"
-mkdir -p "$HOME/.local/bin"
-if [[ -f "helper/mail_badge_bridge.py" ]]; then
-  sed "s|^APP_URI = .*|APP_URI = \"application://$DESKTOP_FILE\"|" \
-    helper/mail_badge_bridge.py > "$BIN"
-elif [[ -f "mail_badge_bridge.py" ]]; then
-  sed "s|^APP_URI = .*|APP_URI = \"application://$DESKTOP_FILE\"|" \
-    mail_badge_bridge.py > "$BIN"
-else
-  echo "Error: mail_badge_bridge.py helper not found!" >&2
-  exit 1
-fi
-chmod 755 "$BIN"
-
-# 3. Create GUI Wrapper script in ~/.local/bin/ to handle Headless <-> GUI toggle
-WRAPPER="$HOME/.local/bin/$APP_NAME"
 cat << 'EOF_WRAPPER' > "$WRAPPER"
 #!/usr/bin/env bash
-# 1. Stop background headless service
 systemctl --user stop APP_NAME_PLACEHOLDER.service 2>/dev/null
-
-# 2. Ensure headless process has fully terminated
 pkill -f "SYS_BINARY_PLACEHOLDER --headless" 2>/dev/null
 sleep 1
-
-# 3. Launch GUI app with all passed arguments
 SYS_BINARY_PLACEHOLDER "$@"
-
-# 4. Restart headless service in the background upon closing the GUI window
 systemctl --user start APP_NAME_PLACEHOLDER.service 2>/dev/null
 EOF_WRAPPER
 
@@ -106,12 +68,57 @@ sed -i "s|APP_NAME_PLACEHOLDER|$APP_NAME|g" "$WRAPPER"
 sed -i "s|SYS_BINARY_PLACEHOLDER|$SYS_BINARY|g" "$WRAPPER"
 chmod +x "$WRAPPER"
 
-# 4. Update .desktop file to use absolute wrapper path
-sed -i "s|Exec=.*$APP_NAME|Exec=$WRAPPER|g" "$LOCAL_DESKTOP"
-update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+# 2. Find system desktop file, copy locally with its proper name, and update ALL Exec lines
+found=""
+for d in "/usr/share/applications" "/usr/local/share/applications" "$APPLICATIONS_DIR"; do
+  if [[ -f "$d/$DESKTOP_FILE" ]]; then
+    found="$d/$DESKTOP_FILE"
+    break
+  fi
+done
 
-# 5. Create and start systemd user service for Headless background mode
-SYSTEMD_DIR="$HOME/.config/systemd/user"
+if [[ -z "$found" ]]; then
+  found=$(find /usr/share/applications -maxdepth 1 -iname "*${APP_NAME}*.desktop" | head -n 1)
+  if [[ -n "$found" ]]; then
+    DESKTOP_FILE="$(basename "$found")"
+  fi
+fi
+
+mkdir -p "$APPLICATIONS_DIR"
+LOCAL_DESKTOP="$APPLICATIONS_DIR/$DESKTOP_FILE"
+
+if [[ -n "$found" && -f "$found" ]]; then
+  cp "$found" "$LOCAL_DESKTOP"
+  # Replace ALL Exec= lines (main entry and actions like ComposeMessage, OpenAddressBook) with wrapper + %u
+  sed -i "s#^Exec=.*#Exec=$WRAPPER %u#g" "$LOCAL_DESKTOP"
+  if command -v update-desktop-database &> /dev/null; then
+    update-desktop-database "$APPLICATIONS_DIR" &> /dev/null || true
+  fi
+  echo "==> Copied and updated desktop file: $LOCAL_DESKTOP"
+else
+  echo "Error: $DESKTOP_FILE not found in the system." >&2
+  exit 1
+fi
+
+# 3. Install Python Native Helper into TARGET_DIR and symlink to BIN_DIR
+HELPER_SRC=""
+if [[ -f "helper/mail_badge_bridge.py" ]]; then
+  HELPER_SRC="helper/mail_badge_bridge.py"
+elif [[ -f "mail_badge_bridge.py" ]]; then
+  HELPER_SRC="mail_badge_bridge.py"
+fi
+
+if [[ -n "$HELPER_SRC" ]]; then
+  sed "s|^APP_URI = .*|APP_URI = \"application://$DESKTOP_FILE\"|" \
+    "$HELPER_SRC" > "$TARGET_DIR/mail_badge_bridge.py"
+  chmod 755 "$TARGET_DIR/mail_badge_bridge.py"
+  ln -sf "$TARGET_DIR/mail_badge_bridge.py" "$BIN_DIR/mail-badge-bridge"
+else
+  echo "Error: mail_badge_bridge.py helper not found!" >&2
+  exit 1
+fi
+
+# 4. Create and start systemd user service for Headless background mode
 mkdir -p "$SYSTEMD_DIR"
 SERVICE_FILE="$SYSTEMD_DIR/$APP_NAME.service"
 
@@ -137,7 +144,7 @@ sed -i "s|SYS_BINARY_PLACEHOLDER|$SYS_BINARY|g" "$SERVICE_FILE"
 systemctl --user daemon-reload
 systemctl --user enable --now "$APP_NAME.service" 2>/dev/null || true
 
-# 6. Set up Native Messaging Manifest for Thunderbird/Firefox
+# 5. Set up Native Messaging Manifest for Thunderbird/Firefox
 MANIFEST=$(cat << 'EOF_MANIFEST'
 {
   "name": "mail_badge_bridge",
@@ -148,7 +155,7 @@ MANIFEST=$(cat << 'EOF_MANIFEST'
 }
 EOF_MANIFEST
 )
-MANIFEST="${MANIFEST//BIN_PATH/$BIN}"
+MANIFEST="${MANIFEST//BIN_PATH/$BIN_DIR/mail-badge-bridge}"
 
 for dir in "$HOME/.mozilla/native-messaging-hosts" \
          "${XDG_CONFIG_HOME:-$HOME/.config}/mozilla/native-messaging-hosts"; do
@@ -156,7 +163,7 @@ for dir in "$HOME/.mozilla/native-messaging-hosts" \
   printf '%s\n' "$MANIFEST" > "$dir/mail_badge_bridge.json"
 done
 
-# 7. Compile add-on package (.xpi) directly in TARGET_DIR
+# 6. Compile add-on package (.xpi)
 if [[ -d "addon" ]]; then
   (cd addon && rm -f ../mail-badge-bridge.xpi \
     && python3 -m zipfile -c ../mail-badge-bridge.xpi manifest.json background.js)
@@ -168,9 +175,9 @@ fi
 echo "=================================================="
 echo " Successfully installed and configured!"
 echo "=================================================="
-echo " Project Directory:  $TARGET_DIR"
+echo " Target Directory:   $TARGET_DIR"
 echo " Local Desktop file: $LOCAL_DESKTOP"
 echo " Wrapper script:     $WRAPPER"
 echo " Systemd service:    $APP_NAME.service (running in background)"
-echo " Native Helper:      $BIN"
+echo " Native Helper:      $BIN_DIR/mail-badge-bridge"
 echo " Add-on package:     $TARGET_DIR/mail-badge-bridge.xpi"
