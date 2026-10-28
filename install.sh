@@ -51,18 +51,27 @@ echo "=================================================="
 echo " Installing Mail Badge Bridge for: $APP_NAME"
 echo "=================================================="
 
-# 1. Create GUI Wrapper script in ~/.local/bin/ first
+# 1. Create GUI Wrapper script in ~/.local/bin/
 WRAPPER="$BIN_DIR/$APP_NAME"
 mkdir -p "$BIN_DIR"
 
-cat << 'EOF_WRAPPER' > "$WRAPPER"
+if [[ "$APP_NAME" == "thunderbird" ]]; then
+  # Thunderbird requires managing the background service
+  cat << 'EOF_WRAPPER' > "$WRAPPER"
 #!/usr/bin/env bash
-systemctl --user stop APP_NAME_PLACEHOLDER.service 2>/dev/null
-pkill -f "SYS_BINARY_PLACEHOLDER --headless" 2>/dev/null
+systemctl --user stop APP_NAME_PLACEHOLDER.service 2>/dev/null || true
+pkill -f "SYS_BINARY_PLACEHOLDER --headless" 2>/dev/null || true
 sleep 1
 SYS_BINARY_PLACEHOLDER "$@"
-systemctl --user start APP_NAME_PLACEHOLDER.service 2>/dev/null
+systemctl --user start APP_NAME_PLACEHOLDER.service 2>/dev/null || true
 EOF_WRAPPER
+else
+  # Betterbird uses native tray; clean wrapper without service management
+  cat << 'EOF_WRAPPER' > "$WRAPPER"
+#!/usr/bin/env bash
+exec SYS_BINARY_PLACEHOLDER "$@"
+EOF_WRAPPER
+fi
 
 sed -i "s|APP_NAME_PLACEHOLDER|$APP_NAME|g" "$WRAPPER"
 sed -i "s|SYS_BINARY_PLACEHOLDER|$SYS_BINARY|g" "$WRAPPER"
@@ -89,7 +98,6 @@ LOCAL_DESKTOP="$APPLICATIONS_DIR/$DESKTOP_FILE"
 
 if [[ -n "$found" && -f "$found" ]]; then
   cp "$found" "$LOCAL_DESKTOP"
-  # Replace ALL Exec= lines (main entry and actions like ComposeMessage, OpenAddressBook) with wrapper + %u
   sed -i "s#^Exec=.*#Exec=$WRAPPER %u#g" "$LOCAL_DESKTOP"
   if command -v update-desktop-database &> /dev/null; then
     update-desktop-database "$APPLICATIONS_DIR" &> /dev/null || true
@@ -118,11 +126,13 @@ else
   exit 1
 fi
 
-# 4. Create and start systemd user service for Headless background mode
-mkdir -p "$SYSTEMD_DIR"
-SERVICE_FILE="$SYSTEMD_DIR/$APP_NAME.service"
+# 4. Systemd Service Logic (Thunderbird vs Betterbird)
+SERVICE_STATUS_TEXT=""
+if [[ "$APP_NAME" == "thunderbird" ]]; then
+  mkdir -p "$SYSTEMD_DIR"
+  SERVICE_FILE="$SYSTEMD_DIR/$APP_NAME.service"
 
-cat << 'EOF_SERVICE' > "$SERVICE_FILE"
+  cat << 'EOF_SERVICE' > "$SERVICE_FILE"
 [Unit]
 Description=APP_NAME_CAP Headless Background Service
 After=network-online.target
@@ -138,13 +148,25 @@ RestartSec=10
 WantedBy=default.target
 EOF_SERVICE
 
-sed -i "s|APP_NAME_CAP|${APP_NAME^}|g" "$SERVICE_FILE"
-sed -i "s|SYS_BINARY_PLACEHOLDER|$SYS_BINARY|g" "$SERVICE_FILE"
+  sed -i "s|APP_NAME_CAP|${APP_NAME^}|g" "$SERVICE_FILE"
+  sed -i "s|SYS_BINARY_PLACEHOLDER|$SYS_BINARY|g" "$SERVICE_FILE"
 
-systemctl --user daemon-reload
-systemctl --user enable --now "$APP_NAME.service" 2>/dev/null || true
+  systemctl --user daemon-reload
+  systemctl --user enable --now "$APP_NAME.service" 2>/dev/null || true
+  SERVICE_STATUS_TEXT="$APP_NAME.service (running in background)"
+else
+  # Betterbird: clean up any existing service if previously created
+  SERVICE_FILE="$SYSTEMD_DIR/$APP_NAME.service"
+  if [[ -f "$SERVICE_FILE" ]]; then
+    systemctl --user stop "$APP_NAME.service" 2>/dev/null || true
+    systemctl --user disable "$APP_NAME.service" 2>/dev/null || true
+    rm -f "$SERVICE_FILE"
+    systemctl --user daemon-reload
+  fi
+  SERVICE_STATUS_TEXT="Not required (using Betterbird's native tray support)"
+fi
 
-# 5. Set up Native Messaging Manifest for Thunderbird/Firefox
+# 5. Set up Native Messaging Manifest
 MANIFEST=$(cat << 'EOF_MANIFEST'
 {
   "name": "mail_badge_bridge",
@@ -178,13 +200,13 @@ echo "=================================================="
 echo " Target Directory:   $TARGET_DIR"
 echo " Local Desktop file: $LOCAL_DESKTOP"
 echo " Wrapper script:     $WRAPPER"
-echo " Systemd service:    $APP_NAME.service (running in background)"
+echo " Systemd service:    $SERVICE_STATUS_TEXT"
 echo " Native Helper:      $BIN_DIR/mail-badge-bridge"
 echo " Add-on package:     $TARGET_DIR/mail-badge-bridge.xpi"
 echo ""
 echo "=================================================="
-echo " Now install the add-on in Thunderbird from: $TARGET_DIR/mail-badge-bridge.xpi"
-echo "    - Open Thunderbird or Betterbird."
+echo " Now install the add-on in $APP_NAME from: $TARGET_DIR/mail-badge-bridge.xpi"
+echo "    - Open $APP_NAME."
 echo "    - Go to Add-ons and Themes (Ctrl+Shift+A) -> Gear icon (⚙)."
 echo "    - Click 'Install Add-on From File...'"
 echo "    - Select: $TARGET_DIR/mail-badge-bridge.xpi"
@@ -198,10 +220,10 @@ echo "  1. Right-click the app icon in Cairo-Dock"
 echo "  2. Go to '$APP_NAME' -> 'Edit'"
 echo "  3. Set 'Command to launch on click' to: $WRAPPER"
 echo "  4. Click 'Apply'"
-echo "  5. Restart Thunderbird"
+echo "  5. Restart $APP_NAME"
 echo "  6. Suggestion for better badge visibility:"
 echo "     Right-click on cairo dock -> configure -> captions -> style: custom ->"
-echo "     bacgrond colour: black -> outline colour: white -> text colour: white"
+echo "     background colour: black -> outline colour: white -> text colour: white"
 echo "=================================================="
 echo ""
 echo "=================================================="

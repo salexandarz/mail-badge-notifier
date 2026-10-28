@@ -38,27 +38,28 @@ echo "=================================================="
 echo " Uninstalling Mail Badge Bridge for: $APP_NAME"
 echo "=================================================="
 
-# 1. Stop and disable systemd user service
+# 1. Stop and disable systemd user service (if present)
 if systemctl --user --quiet is-active "$APP_NAME.service" 2>/dev/null; then
   echo "==> Stopping systemd service: $APP_NAME.service..."
-  systemctl --user stop "$APP_NAME.service" || true
+  systemctl --user stop "$APP_NAME.service" 2>/dev/null || true
 fi
+
 if systemctl --user --quiet is-enabled "$APP_NAME.service" 2>/dev/null; then
   echo "==> Disabling systemd service: $APP_NAME.service..."
-  systemctl --user disable "$APP_NAME.service" || true
+  systemctl --user disable "$APP_NAME.service" 2>/dev/null || true
 fi
 
 SERVICE_FILE="$SYSTEMD_DIR/$APP_NAME.service"
 if [[ -f "$SERVICE_FILE" ]]; then
   rm -f "$SERVICE_FILE"
   echo "==> Removed service file: $SERVICE_FILE"
-  systemctl --user daemon-reload || true
+  systemctl --user daemon-reload 2>/dev/null || true
 fi
 
-# 2. Kill remaining headless processes
+# 2. Kill remaining headless processes for this client
 pkill -f "$SYS_BINARY --headless" 2>/dev/null || true
 
-# 3. Remove wrapper and symlink from BIN_DIR
+# 3. Remove wrapper script and helper symlink from BIN_DIR
 if [[ -f "$BIN_DIR/$APP_NAME" ]]; then
   rm -f "$BIN_DIR/$APP_NAME"
   echo "==> Removed wrapper script: $BIN_DIR/$APP_NAME"
@@ -95,7 +96,7 @@ if [[ -d "$TARGET_DIR" ]]; then
   echo "==> Removed target XDG data directory: $TARGET_DIR"
 fi
 
-# Clean up any root-level compiled .xpi file if present
+# Clean up any local compiled .xpi file if present in working directory
 if [[ -f "mail-badge-bridge.xpi" ]]; then
   rm -f "mail-badge-bridge.xpi"
 fi
