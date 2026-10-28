@@ -100,7 +100,7 @@ Because Thunderbird launches via a custom wrapper script (~/.local/bin/thunderbi
 
     Do not click "Set as Default", as this will generate a userapp-Thunderbird-...desktop file that bypasses the wrapper.
 
-    Instead, check "Always perform this check when starting Thunderbird" off and click Skip Integration (or set mail.shell.checkDefaultClient to false in Thunderbird`s Config Editor).
+    Instead, check "Always perform this check when starting Thunderbird" off and click Skip Integration (or set mail.shell.checkDefaultClient to false in Thunderbirds Config Editor).
 
     To set default applications manually in KDE Plasma, go to:
 
