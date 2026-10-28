@@ -1,5 +1,17 @@
 # Mail Badge Notifier
 
+### ⚠️ Important Notice Regarding Thunderbird 159.0+ Native Support
+
+Starting with **Thunderbird 159.0**, Mozilla has introduced **native unread badge support** on Linux taskbars into the official codebase.
+
+* **If you use clean Thunderbird 159.0+:** You may no longer need our extension (add-on) and background service for basic notifications, as the client now handles this natively when the window is open.
+* **Why this project is still useful (and essential for Betterbird):**
+  1. **Betterbird:** Betterbird does not yet have this native implementation to the same extent, so our tool provides a seamless system tray and synchronization setup.
+  2. **True Headless Background Operation:** Thunderbird kills its process when you close the main window. Our `systemd` headless service allows mail monitoring and badge updates to continue **even when the main window is completely closed**, without profile locking conflicts.
+  3. **Cairo-Dock and Alternative Panels:** Native implementations rely on standard desktop portals that often fail with specialized docks (like Cairo-Dock), whereas our code explicitly emits `com.canonical.Unity.LauncherEntry` signals.
+
+*Conflict Warning:* If you run Thunderbird 159.0+ with native badges enabled and our extension simultaneously, duplicate D-Bus signals may occur. If you notice counter flickering, you can disable our WebExtension and rely on native support, or keep our toolkit if you require headless background operation.
+
 Unread mail taskbar badges for **Thunderbird** and **Betterbird** on Linux, featuring a headless background `systemd` user service, a seamless GUI wrapper, XDG Base Directory compliance, and native messaging integration.
 
 This project is a heavily refactored, modernized, and XDG-compliant fork of [bakatamas/mail-badge-bridge](https://github.com/bakatamas/mail-badge-bridge).
