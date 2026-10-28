@@ -1,103 +1,166 @@
 # Mail Badge Notifier
 
-## Extended Features in this Fork
+Unread mail taskbar badges for **Thunderbird** and **Betterbird** on Linux, featuring a headless background `systemd` user service, a seamless GUI wrapper, XDG Base Directory compliance, and native messaging integration.
 
-This fork (`salexandarz/mail-badge-notifier`) builds upon the original `mail-badge-bridge` to transform it into a **complete, automated background email management and notification system**.
-
-Key additions include:
-
-- **Headless Background Service:** Runs Thunderbird/Betterbird in the background using a user-level `systemd` service (`--headless -no-remote`) so you receive mail notifications and taskbar badge updates continuously without keeping a full application window open.
-- **Smart GUI Wrapper:** Automatically manages application locks (`parent.lock`). Launching the app via your desktop launcher temporarily stops the background service to open the GUI cleanly, and automatically resumes background mode upon closing.
-- **KDE / Wayland Compatibility:** Configures launcher entries with absolute binary paths to ensure reliable launch behavior across desktop environments.
-- **Universal Taskbar Badge Support:** Seamlessly updates taskbar badges across KDE Plasma, Unity, and **Cairo-Dock**.
-
-### Cairo-Dock Setup Requirements:
-To get the notification badges working correctly on your Thunderbird/Betterbird launcher in Cairo-Dock, ensure the following requirements are met:
-
-1. **D-Bus Enabled:** Make sure D-Bus communication and integration are active in your Cairo-Dock configuration.
-2. **Appearance & Captions:** Customize the visual style of the badge (such as text color, outlines, and background) inside Cairo-Dock under **Appearance** -> **Captions**.
+This project is a heavily refactored, modernized, and XDG-compliant fork of [bakatamas/mail-badge-bridge](https://github.com/bakatamas/mail-badge-bridge).
 
 ---
 
-Shows the **unread count of all your inboxes** as a badge on the **Thunderbird** (or Betterbird) taskbar icon on Linux.
+## Why This Exists
 
-<!-- Add a screenshot: save it as docs/screenshot.png and uncomment the line below.
-![Unread badge on the Betterbird taskbar icon](docs/screenshot.png)
--->
+Thunderbird and Betterbird include an "App icon badge" setting, but on Linux, they do not natively output unread badge counts to the taskbar/dock out of the box. Desktop environments like KDE Plasma support these badges via the `com.canonical.Unity.LauncherEntry` D-Bus API. 
 
-## Why
-
-Betterbird and Thunderbird have an "App icon badge" setting, but on Linux it often fails to send the count to the taskbar natively. KDE Plasma and other Linux desktop docks support these badges through the Unity `LauncherEntry` D-Bus API, so this project fills the gap:
-
-- **A systemd user service** runs your mail client headless in the background.
-- **A small WebExtension** sums up unread messages across all account Inboxes.
-- **A Python helper** uses `gdbus` signals to update the taskbar badge in real time.
-- **A smart wrapper** safely handles opening and closing the main GUI window without profile conflicts.
-
-The badge updates instantly when mail arrives or is read, and stays active even when the GUI window is closed.
+This project bridges that gap:
+1. **WebExtension Add-on:** Monitors all configured mail inboxes and calculates the total unread message count.
+2. **Native Python Helper:** Receives the total count via standard I/O (Native Messaging) and broadcasts `Unity.LauncherEntry` D-Bus signals.
+3. **Smart Integration:** 
+   - **Thunderbird:** Uses a headless `systemd` user service and a custom GUI wrapper script to keep unread badges updated even when the mail client window is closed, completely avoiding profile locking issues.
+   - **Betterbird:** Leverages native system tray support ("Minimize/Close to Tray"), running without requiring background systemd services.
 
 ---
 
 ## Requirements
 
-- Thunderbird or Betterbird **128 or newer**, installed natively (not as Flatpak or Snap; see [Limitations](#limitations)).
-- A taskbar or dock supporting Unity `LauncherEntry` badges (e.g., **KDE Plasma**, **Cairo-Dock**).
-- `systemd` (user session enabled).
-- Python 3.
+* **Thunderbird or Betterbird 128 or newer** (Installed natively via system package manager; Flatpak and Snap are *not supported* due to container sandboxing restrictions).
+* **Linux Desktop Environment / Dock** supporting `Unity.LauncherEntry` badges (e.g., KDE Plasma 5/6, Cairo-Dock).
+* **Python 3**, **Bash**, and **Systemd**.
 
 ---
 
-## Install
+## Installation
 
-Clone the repository and run the installer:
+### Option A: Via AUR (Recommended for Arch Linux)
+
+If you are on Arch Linux, install the package directly from the Arch User Repository:
 
 ```bash
-git clone [https://github.com/salexandarz/mail-badge-notifier.git](https://github.com/salexandarz/mail-badge-notifier.git)
-cd mail-badge-notifier
-./install.sh
+yay -S mail-badge-notifier-git
 
-For Betterbird, pass --betterbird:
+Once installed from AUR, run the user-space installer for your mail client:
 Bash
 
-./install.sh --betterbird
+# For Thunderbird users:
+/usr/share/mail-badge-notifier-git/install.sh --thunderbird
 
-If your launcher desktop file has a custom name:
-Bash
+# For Betterbird users:
+/usr/share/mail-badge-notifier-git/install.sh --betterbird
 
-./install.sh --desktop-file custom-launcher.desktop
+Option B: Manual Installation (Git Clone)
 
-Final Add-on Activation
+    Clone the repository:
+    Bash
 
-After running install.sh:
+    git clone [https://github.com/salexandarz/mail-badge-notifier.git](https://github.com/salexandarz/mail-badge-notifier.git)
+    cd mail-badge-notifier
+
+    Run the installer script:
+    Bash
+
+    # For Thunderbird:
+    ./install.sh --thunderbird
+
+    # For Betterbird:
+    ./install.sh --betterbird
+
+Step 2: Install the Add-on Package
+
+After running the installer script:
+
+    Launch Thunderbird or Betterbird.
+
+    Open Add-ons and Themes (Ctrl + Shift + A).
+
+    Click the Gear icon (⚙) in the top right corner and select Install Add-on From File....
+
+    Navigate to and select the compiled .xpi package located at:
+    Plaintext
+
+    ~/.local/share/mail-badge-notifier/mail-badge-bridge.xpi
+
+    Confirm the installation.
+
+    Restart your mail client once to finalize the native messaging bridge initialization.
+
+Post-Installation Notes & Best Practices
+1. Default Client Prompt (Thunderbird)
+
+Because Thunderbird launches via a custom wrapper script (~/.local/bin/thunderbird) to handle background service toggling, it may ask to become the default mail client on startup.
+
+    Do not click "Set as Default", as this will generate a userapp-Thunderbird-...desktop file that bypasses the wrapper.
+
+    Instead, check "Always perform this check when starting Thunderbird" off and click Skip Integration (or set mail.shell.checkDefaultClient to false in Thunderbird`s Config Editor).
+
+    To set default applications manually in KDE Plasma, go to:
+
+        System Settings → Default Applications → Email client → Thunderbird.
+
+        System Settings → File Associations → message/rfc822 → move Thunderbird to the top.
+
+2. Betterbird System Tray Setup
+
+Betterbird does not require a background systemd service. To keep unread badges active when the main window is closed:
+
+    Open Betterbird Settings → General.
+
+    Enable "When Betterbird is closed, move it to the tray".
+
+3. Cairo-Dock Setup
+
+If you use Cairo-Dock and the dock launcher does not switch to the wrapper executable properly:
+
+    Right-click the app icon in Cairo-Dock.
+
+    Select thunderbird (or betterbird) → Edit.
+
+    Change Command to launch on click to:
+    Plaintext
+
+    ~/.local/bin/thunderbird
+
+    Click Apply.
+
+    Visibility Tip: In Cairo-Dock settings (Configure → Captions → Style: Custom), set background to black, outline to white, and text to white for optimal badge readability.
+
+Uninstallation Procedure
+
+To prevent orphaned processes or native host connection errors, follow this exact order:
+1. Remove the Add-on in GUI
 
     Open Thunderbird / Betterbird.
 
-    Go to Add-ons and Themes → ⚙ → Install Add-on From File…
+    Go to Add-ons and Themes (Ctrl + Shift + A).
 
-    Select mail-badge-bridge.xpi from the cloned repository folder.
+    Locate Mail Badge Bridge, click the ... menu, and select Remove.
 
-    Restart your mail app once to complete WebExtension registration.
+    Close the application.
 
-## Uninstall
+2. Run the Uninstaller Script
 
-To clean up all systemd services, wrapper scripts, Native Messaging hosts, and desktop shortcuts:
-Bash
+Run the uninstaller script based on your installation method:
 
-./uninstall.sh
+    If installed manually or via AUR:
+    Bash
 
-For Betterbird cleanup:
-Bash
+    ~/.local/share/mail-badge-notifier/uninstall.sh
 
-./uninstall.sh --betterbird
+    If installed via AUR, clean up the package afterwards:
+    Bash
 
-## Troubleshooting
-No badge at all
+    yay -Rns mail-badge-notifier-git
 
-    Check Browser Console: Press Ctrl+Shift+J in your mail app and look for logs starting with mail-badge-bridge:
+Troubleshooting
+No badge appearing on the taskbar icon
 
-       # "No such native application" indicates the helper script isn't registered properly. Re-run ./install.sh.
+    Check Native Host Logs in Mail Client:
 
-    Test D-Bus Signal: Run the following command in terminal while the service is active (replace the desktop entry name if using Betterbird or a custom launcher):
+        Press Ctrl + Shift + J in Thunderbird/Betterbird to open the Error Console.
+
+        Filter logs by typing mail-badge-bridge.
+
+        If you see "No such native application", re-run install.sh to fix the messaging host manifest link.
+
+    Test Taskbar D-Bus Reception:
+    Run the following command in terminal while your mail client is running to verify if your desktop panel supports Unity.LauncherEntry:
     Bash
 
     gdbus emit --session --object-path /test \
@@ -105,39 +168,36 @@ No badge at all
       "application://org.mozilla.Thunderbird.desktop" \
       "{'count': <int64 5>, 'count-visible': <true>}"
 
-    If no badge appears, unpin the taskbar icon, launch the app from your application menu, and pin it again.
+    If no badge with number 5 appears on your taskbar icon:
 
-    Monitor D-Bus Traffic:
+        Unpin the icon from your taskbar/dock.
+
+        Launch Thunderbird/Betterbird directly from the application menu (~/.local/share/applications/).
+
+        Pin the running window icon back to your taskbar.
+
+    Monitor D-Bus Signal Traffic:
+    To watch live signals emitted by the Python helper:
     Bash
 
     dbus-monitor "interface='com.canonical.Unity.LauncherEntry'"
 
-## Wrong unread count
+    Check Systemd Service (Thunderbird only):
+    Bash
 
-The count includes every folder marked as an Inbox across all configured accounts, including local folders if present.
+    systemctl --user status thunderbird.service
+    journalctl --user -u thunderbird.service -f
 
-## Limitations
+Limitations
 
-    Flatpak / Snap releases cannot trigger native messaging binaries outside their sandbox environment.
+    Flatpak / Snap: Sandboxed applications cannot execute native messaging helpers outside their runtime container.
 
-    GNOME does not support LauncherEntry badges natively out of the box without specific dock extensions.
+    GNOME Desktop: Stock GNOME Dash does not natively support Unity.LauncherEntry badges unless an extension with launcher entry support is enabled.
 
-## How It Works
+Credits & License
 
-    Service Management: The installer deploys a user systemd unit (thunderbird.service) running in --headless -no-remote mode.
+    Refactored, modernized, packaged, and custom headless service developed by Aleksandar Zarić (salexandarz).
 
-    Unread Tracking: The WebExtension listens for unread count changes and sends updates through Native Messaging.
+    Original implementation by Baka Tamás and Claude (Anthropic) as mail-badge-bridge.
 
-    Badge Bridge: The Python script receives messages from the extension and emits com.canonical.Unity.LauncherEntry.Update D-Bus signals.
-
-    GUI Switching: The wrapper (~/.local/bin/thunderbird) handles stopping the background service when you open the application interface, releasing parent.lock, and resuming background monitoring when closed.
-
-## Credits
-
-    Originally created by Baka Tamás (mail-badge-bridge).
-
-    Headless systemd service integration, GUI wrapper automation, and Cairo-Dock support maintained by salexandarz.
-
-## License
-
-[MIT](LICENSE)
+    Distributed under the MIT License.
