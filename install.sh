@@ -98,7 +98,12 @@ LOCAL_DESKTOP="$APPLICATIONS_DIR/$DESKTOP_FILE"
 
 if [[ -n "$found" && -f "$found" ]]; then
   cp "$found" "$LOCAL_DESKTOP"
-  sed -i "s#^Exec=.*#Exec=$WRAPPER %u#g" "$LOCAL_DESKTOP"
+
+  # Updating all Exec lines (main + actions)
+  sed -i "0,/^Exec=/s#^Exec=.*#Exec=$WRAPPER %u#g" "$LOCAL_DESKTOP"
+  sed -i "/\[Desktop Action ComposeMessage\]/,/^\[/s#^Exec=.*#Exec=$WRAPPER -compose#g" "$LOCAL_DESKTOP"
+  sed -i "/\[Desktop Action OpenAddressBook\]/,/^\[/s#^Exec=.*#Exec=$WRAPPER -addressbook#g" "$LOCAL_DESKTOP"
+
   if command -v update-desktop-database &> /dev/null; then
     update-desktop-database "$APPLICATIONS_DIR" &> /dev/null || true
   fi
@@ -180,7 +185,7 @@ EOF_MANIFEST
 MANIFEST="${MANIFEST//BIN_PATH/$BIN_DIR/mail-badge-bridge}"
 
 for dir in "$HOME/.mozilla/native-messaging-hosts" \
-         "${XDG_CONFIG_HOME:-$HOME/.config}/mozilla/native-messaging-hosts"; do
+           "${XDG_CONFIG_HOME:-$HOME/.config}/mozilla/native-messaging-hosts"; do
   mkdir -p "$dir"
   printf '%s\n' "$MANIFEST" > "$dir/mail_badge_bridge.json"
 done
@@ -197,9 +202,9 @@ fi
 echo "=================================================="
 echo " Successfully installed and configured!"
 echo "=================================================="
-echo " Target Directory:   $TARGET_DIR"
+echo " Target Directory:    $TARGET_DIR"
 echo " Local Desktop file: $LOCAL_DESKTOP"
-echo " Wrapper script:     $WRAPPER"
+echo " Wrapper script:      $WRAPPER"
 echo " Systemd service:    $SERVICE_STATUS_TEXT"
 echo " Native Helper:      $BIN_DIR/mail-badge-bridge"
 echo " Add-on package:     $TARGET_DIR/mail-badge-bridge.xpi"
