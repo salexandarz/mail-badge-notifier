@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mail Badge Bridge User-Space Installer (XDG Compliant)
+# Mail Badge Bridge User-Space Installer (XDG Compliant, Multi-App Parallel Support)
 set -euo pipefail
 
 TARGET_DIR="$HOME/.local/share/mail-badge-notifier"
@@ -56,7 +56,6 @@ WRAPPER="$BIN_DIR/$APP_NAME"
 mkdir -p "$BIN_DIR"
 
 if [[ "$APP_NAME" == "thunderbird" ]]; then
-  # Thunderbird requires managing the background service
   cat << 'EOF_WRAPPER' > "$WRAPPER"
 #!/usr/bin/env bash
 systemctl --user stop APP_NAME_PLACEHOLDER.service 2>/dev/null || true
@@ -66,7 +65,6 @@ SYS_BINARY_PLACEHOLDER "$@"
 systemctl --user start APP_NAME_PLACEHOLDER.service 2>/dev/null || true
 EOF_WRAPPER
 else
-  # Betterbird uses native tray; clean wrapper without service management
   cat << 'EOF_WRAPPER' > "$WRAPPER"
 #!/usr/bin/env bash
 exec SYS_BINARY_PLACEHOLDER "$@"
@@ -99,7 +97,6 @@ LOCAL_DESKTOP="$APPLICATIONS_DIR/$DESKTOP_FILE"
 if [[ -n "$found" && -f "$found" ]]; then
   cp "$found" "$LOCAL_DESKTOP"
 
-  # Updating all Exec lines (main + actions)
   sed -i "0,/^Exec=/s#^Exec=.*#Exec=$WRAPPER %u#g" "$LOCAL_DESKTOP"
   sed -i "/\[Desktop Action ComposeMessage\]/,/^\[/s#^Exec=.*#Exec=$WRAPPER -compose#g" "$LOCAL_DESKTOP"
   sed -i "/\[Desktop Action OpenAddressBook\]/,/^\[/s#^Exec=.*#Exec=$WRAPPER -addressbook#g" "$LOCAL_DESKTOP"
@@ -113,7 +110,7 @@ else
   exit 1
 fi
 
-# 3. Install Python Native Helper into TARGET_DIR and symlink to BIN_DIR
+# 3. Install Python Native Helper into TARGET_DIR (per app) and symlink to BIN_DIR
 HELPER_SRC=""
 if [[ -f "helper/mail_badge_bridge.py" ]]; then
   HELPER_SRC="helper/mail_badge_bridge.py"
@@ -122,10 +119,13 @@ elif [[ -f "mail_badge_bridge.py" ]]; then
 fi
 
 if [[ -n "$HELPER_SRC" ]]; then
+  TARGET_HELPER="$TARGET_DIR/mail_badge_bridge_$APP_NAME.py"
+  HELPER_SYMLINK="$BIN_DIR/mail-badge-bridge-$APP_NAME"
+
   sed "s|^APP_URI = .*|APP_URI = \"application://$DESKTOP_FILE\"|" \
-    "$HELPER_SRC" > "$TARGET_DIR/mail_badge_bridge.py"
-  chmod 755 "$TARGET_DIR/mail_badge_bridge.py"
-  ln -sf "$TARGET_DIR/mail_badge_bridge.py" "$BIN_DIR/mail-badge-bridge"
+    "$HELPER_SRC" > "$TARGET_HELPER"
+  chmod 755 "$TARGET_HELPER"
+  ln -sf "$TARGET_HELPER" "$HELPER_SYMLINK"
 else
   echo "Error: mail_badge_bridge.py helper not found!" >&2
   exit 1
@@ -160,7 +160,6 @@ EOF_SERVICE
   systemctl --user enable --now "$APP_NAME.service" 2>/dev/null || true
   SERVICE_STATUS_TEXT="$APP_NAME.service (running in background)"
 else
-  # Betterbird: clean up any existing service if previously created
   SERVICE_FILE="$SYSTEMD_DIR/$APP_NAME.service"
   if [[ -f "$SERVICE_FILE" ]]; then
     systemctl --user stop "$APP_NAME.service" 2>/dev/null || true
@@ -171,32 +170,49 @@ else
   SERVICE_STATUS_TEXT="Not required (using Betterbird's native tray support)"
 fi
 
-# 5. Set up Native Messaging Manifest
+# 5. Set up Native Messaging Manifest (per app)
 MANIFEST=$(cat << 'EOF_MANIFEST'
 {
-  "name": "mail_badge_bridge",
-  "description": "Mail Badge Bridge helper",
+  "name": "mail_badge_bridge_APP_PLACEHOLDER",
+  "description": "Mail Badge Bridge helper for APP_PLACEHOLDER",
   "path": "BIN_PATH",
   "type": "stdio",
   "allowed_extensions": ["mail-badge-bridge@celest-watches.com"]
 }
 EOF_MANIFEST
 )
-MANIFEST="${MANIFEST//BIN_PATH/$BIN_DIR/mail-badge-bridge}"
+MANIFEST="${MANIFEST//APP_PLACEHOLDER/$APP_NAME}"
+MANIFEST="${MANIFEST//BIN_PATH/$BIN_DIR/mail-badge-bridge-$APP_NAME}"
 
 for dir in "$HOME/.mozilla/native-messaging-hosts" \
            "${XDG_CONFIG_HOME:-$HOME/.config}/mozilla/native-messaging-hosts"; do
   mkdir -p "$dir"
-  printf '%s\n' "$MANIFEST" > "$dir/mail_badge_bridge.json"
+  printf '%s\n' "$MANIFEST" > "$dir/mail_badge_bridge_$APP_NAME.json"
 done
 
-# 6. Compile add-on package (.xpi)
+# 6. Compile add-on package (.xpi) per app with patched background.js
+TEMP_ADDON_DIR=$(mktemp -d)
+trap 'rm -rf "$TEMP_ADDON_DIR"' EXIT
+
+SRC_ADDON_DIR=""
 if [[ -d "addon" ]]; then
-  (cd addon && rm -f ../mail-badge-bridge.xpi \
-    && python3 -m zipfile -c ../mail-badge-bridge.xpi manifest.json background.js)
+  SRC_ADDON_DIR="addon"
 elif [[ -f "manifest.json" && -f "background.js" ]]; then
-  rm -f mail-badge-bridge.xpi
-  python3 -m zipfile -c mail-badge-bridge.xpi manifest.json background.js
+  SRC_ADDON_DIR="."
+fi
+
+if [[ -n "$SRC_ADDON_DIR" ]]; then
+  cp "$SRC_ADDON_DIR/manifest.json" "$TEMP_ADDON_DIR/"
+  cp "$SRC_ADDON_DIR/background.js" "$TEMP_ADDON_DIR/"
+
+  sed -i "s|mail_badge_bridge|mail_badge_bridge_$APP_NAME|g" "$TEMP_ADDON_DIR/background.js"
+
+  XPI_NAME="mail-badge-bridge-$APP_NAME.xpi"
+  rm -f "$TARGET_DIR/$XPI_NAME"
+  (cd "$TEMP_ADDON_DIR" && python3 -m zipfile -c "$TARGET_DIR/$XPI_NAME" manifest.json background.js)
+else
+  echo "Error: Addon files (manifest.json, background.js) not found!" >&2
+  exit 1
 fi
 
 echo "=================================================="
@@ -205,35 +221,40 @@ echo "=================================================="
 echo " Target Directory:    $TARGET_DIR"
 echo " Local Desktop file: $LOCAL_DESKTOP"
 echo " Wrapper script:      $WRAPPER"
-echo " Systemd service:    $SERVICE_STATUS_TEXT"
-echo " Native Helper:      $BIN_DIR/mail-badge-bridge"
-echo " Add-on package:     $TARGET_DIR/mail-badge-bridge.xpi"
+echo " Systemd service:     $SERVICE_STATUS_TEXT"
+echo " Native Helper:       $BIN_DIR/mail-badge-bridge-$APP_NAME"
+echo " Add-on package:      $TARGET_DIR/mail-badge-bridge-$APP_NAME.xpi"
+echo "=================================================="
 echo ""
 echo "=================================================="
-echo " Now install the add-on in $APP_NAME from: $TARGET_DIR/mail-badge-bridge.xpi"
+echo " ADD-ON INSTALLATION:"
+echo "=================================================="
+echo " Now install the add-on in $APP_NAME from: $TARGET_DIR/mail-badge-bridge-$APP_NAME.xpi"
 echo "    - Open $APP_NAME."
 echo "    - Go to Add-ons and Themes (Ctrl+Shift+A) -> Gear icon (⚙)."
 echo "    - Click 'Install Add-on From File...'"
-echo "    - Select: $TARGET_DIR/mail-badge-bridge.xpi"
+echo "    - Select: $TARGET_DIR/mail-badge-bridge-$APP_NAME.xpi"
 echo "    - Restart your mail client once."
 echo "=================================================="
 echo ""
 echo "=================================================="
 echo "NOTE FOR CAIRO-DOCK USERS:"
-echo "  If you use Cairo-Dock and the icon doesn't switch to GUI properly:"
-echo "  1. Right-click the app icon in Cairo-Dock"
-echo "  2. Go to '$APP_NAME' -> 'Edit'"
-echo "  3. Set 'Command to launch on click' to: $WRAPPER"
-echo "  4. Click 'Apply'"
-echo "  5. Restart $APP_NAME"
-echo "  6. Suggestion for better badge visibility:"
-echo "     Right-click on cairo dock -> configure -> captions -> style: custom ->"
-echo "     background colour: black -> outline colour: white -> text colour: white"
+echo "=================================================="
+echo "    If you use Cairo-Dock and the icon doesn't switch to GUI properly:"
+echo "    1. Right-click the app icon in Cairo-Dock"
+echo "    2. Go to '$APP_NAME' -> 'Edit'"
+echo "    3. Set 'Command to launch on click' to: $WRAPPER"
+echo "    4. Click 'Apply'"
+echo "    5. Restart $APP_NAME"
+echo "    6. Suggestion for better badge visibility:"
+echo "       Right-click on cairo dock -> configure -> captions -> style: custom ->"
+echo "       background colour: black -> outline colour: white -> text colour: white"
 echo "=================================================="
 echo ""
 echo "=================================================="
 echo "TO UNINSTALL:"
-echo "  Run the uninstallation script from:"
-echo "  $TARGET_DIR/uninstall.sh"
-echo "  and yay -Rns mail-badge-notifier-git (if you installed from AUR)"
+echo "=================================================="
+echo "    Run the uninstallation script from:"
+echo "    $TARGET_DIR/uninstall.sh"
+echo "    and yay -Rns mail-badge-notifier-git (if you installed from AUR)"
 echo "=================================================="
