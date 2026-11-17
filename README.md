@@ -53,9 +53,9 @@ This project bridges that gap:
 
 ---
 
-## Installation
+# Installation
 
-### Option A: Via AUR (Recommended for Arch Linux)
+## Option A: Via AUR (Recommended for Arch Linux)
 
 If you are on Arch Linux, install the package directly from the Arch User Repository:
 
@@ -64,13 +64,13 @@ yay -S mail-badge-notifier-git
 
 Once installed from AUR, run the user-space installer for your mail client:
 
-# For Thunderbird users:
+### For Thunderbird users:
 /usr/share/mail-badge-notifier-git/install.sh --thunderbird
 
-# For Betterbird users:
+### For Betterbird users:
 /usr/share/mail-badge-notifier-git/install.sh --betterbird
 
-### Option B: Manual Installation (Git Clone)
+## Option B: Manual Installation (Git Clone)
 1.    Clone the repository:
 
 git clone https://github.com/salexandarz/mail-badge-notifier.git
@@ -78,15 +78,15 @@ cd mail-badge-notifier
 
 2.    Run the installer script:
 
-# For Thunderbird:
+### For Thunderbird:
 ./install.sh --thunderbird
 
-# For Betterbird:
+### For Betterbird:
 ./install.sh --betterbird
 
-## Installation Step 2:
+# Installation Step 2:
 
-### Install the Add-on Package
+## Install the Add-on Package
 
 After running the installer script:
 
@@ -146,8 +146,8 @@ If you use Cairo-Dock and the dock launcher does not switch to the wrapper execu
 
 # Uninstallation Procedure
 
-### To prevent orphaned processes or native host connection errors, follow this exact order:
-# 1. Remove the Add-on in GUI
+## To prevent orphaned processes or native host connection errors, follow this exact order:
+### 1. Remove the Add-on in GUI
 
 1.    Open Thunderbird / Betterbird.
 
@@ -157,18 +157,18 @@ If you use Cairo-Dock and the dock launcher does not switch to the wrapper execu
 
 4.    Close the application.
 
-# 2. Run the Uninstaller Script
+### 2. Run the Uninstaller Script
 
-### Run the uninstaller script based on your installation method:
+## Run the uninstaller script based on your installation method:
 
-# If installed manually or via AUR:
+### If installed manually or via AUR:
 ~/.local/share/mail-badge-notifier/uninstall.sh
 
-# If installed via AUR, clean up the package afterwards:
+### If installed via AUR, clean up the package afterwards:
 yay -Rns mail-badge-notifier-git
 
-## Troubleshooting
-# No badge appearing on the taskbar icon
+# Troubleshooting
+## No badge appearing on the taskbar icon
 
 1.    Check Native Host Logs in Mail Client:
 
@@ -204,13 +204,13 @@ dbus-monitor "interface='com.canonical.Unity.LauncherEntry'"
 systemctl --user status thunderbird.service
 journalctl --user -u thunderbird.service -f
 
-## Limitations
+# Limitations
 
    * Flatpak / Snap: Sandboxed applications cannot execute native messaging helpers outside their runtime container.
 
    * GNOME Desktop: Stock GNOME Dash does not natively support Unity.LauncherEntry badges unless an extension with launcher entry support is enabled.
 
-## Credits & License
+# Credits & License
 
    * Refactored, modernized, packaged, and custom headless service developed by Aleksandar Zarić (salexandarz).
 
