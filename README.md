@@ -84,7 +84,9 @@ cd mail-badge-notifier
 # For Betterbird:
 ./install.sh --betterbird
 
-Step 2: Install the Add-on Package
+## Installation Step 2:
+
+### Install the Add-on Package
 
 After running the installer script:
 
