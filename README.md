@@ -105,7 +105,7 @@ After running the installer script:
 6.    Restart your mail client once to finalize the native messaging bridge initialization.
 
 
-Post-Installation Notes & Best Practices
+## Post-Installation Notes & Best Practices
 1. Default Client Prompt (Thunderbird)
 
 Because Thunderbird launches via a custom wrapper script (~/.local/bin/thunderbird) to handle background service toggling, it may ask to become the default mail client on startup.
@@ -144,10 +144,10 @@ If you use Cairo-Dock and the dock launcher does not switch to the wrapper execu
 
 5.    Visibility Tip: In Cairo-Dock settings (Configure → Captions → Style: Custom), set background to black, outline to white, and text to white for optimal badge readability.
 
-Uninstallation Procedure
+# Uninstallation Procedure
 
-To prevent orphaned processes or native host connection errors, follow this exact order:
-1. Remove the Add-on in GUI
+## To prevent orphaned processes or native host connection errors, follow this exact order:
+# 1. Remove the Add-on in GUI
 
 1.    Open Thunderbird / Betterbird.
 
@@ -157,9 +157,9 @@ To prevent orphaned processes or native host connection errors, follow this exac
 
 4.    Close the application.
 
-2. Run the Uninstaller Script
+# 2. Run the Uninstaller Script
 
-Run the uninstaller script based on your installation method:
+## Run the uninstaller script based on your installation method:
 
 # If installed manually or via AUR:
 ~/.local/share/mail-badge-notifier/uninstall.sh
@@ -167,8 +167,8 @@ Run the uninstaller script based on your installation method:
 # If installed via AUR, clean up the package afterwards:
 yay -Rns mail-badge-notifier-git
 
-Troubleshooting
-No badge appearing on the taskbar icon
+### Troubleshooting
+# No badge appearing on the taskbar icon
 
 1.    Check Native Host Logs in Mail Client:
 
@@ -204,13 +204,13 @@ dbus-monitor "interface='com.canonical.Unity.LauncherEntry'"
 systemctl --user status thunderbird.service
 journalctl --user -u thunderbird.service -f
 
-Limitations
+# Limitations
 
    * Flatpak / Snap: Sandboxed applications cannot execute native messaging helpers outside their runtime container.
 
    * GNOME Desktop: Stock GNOME Dash does not natively support Unity.LauncherEntry badges unless an extension with launcher entry support is enabled.
 
-Credits & License
+### Credits & License
 
    * Refactored, modernized, packaged, and custom headless service developed by Aleksandar Zarić (salexandarz).
 
