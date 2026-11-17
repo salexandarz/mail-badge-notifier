@@ -2,6 +2,7 @@
 
 Unread mail taskbar badges for **Thunderbird** and **Betterbird** on Linux, featuring a headless background `systemd` user service, a seamless GUI wrapper, XDG Base Directory compliance, and native messaging integration.
 
+  <img src="assets/cairo-dock-badge.png" width="600" alt="Cairo-Dock unread badge in action">
 ### ⚠️ Important Notice Regarding Thunderbird 159.0+
 
 Starting with **Thunderbird 159.0**, Mozilla added basic unread indicators to Linux system tray icons (showing unread status and count in the hover tooltip on supported X11/AppIndicator setups). However, **mail-badge-notifier** remains essential for modern Linux desktops—especially **KDE Plasma 6 on Wayland**—for several key reasons:
