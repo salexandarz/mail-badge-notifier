@@ -14,6 +14,19 @@ Starting with **Thunderbird 159.0**, Mozilla has introduced **native unread badg
 
 Unread mail taskbar badges for **Thunderbird** and **Betterbird** on Linux, featuring a headless background `systemd` user service, a seamless GUI wrapper, XDG Base Directory compliance, and native messaging integration.
 
+## How It Differs from Birdtray and SysTray-X
+
+While tools like **Birdtray** and **SysTray-X** focus on adding a **System Tray icon** and managing window visibility (*Close/Minimize to Tray*), **mail-badge-notifier** takes a different architectural approach designed for modern Linux desktops (such as KDE Plasma 6 and Wayland):
+
+* **Taskbar / Dock Badge vs. System Tray:**
+  `mail-badge-notifier` updates the unread counter badge directly on your main application icon in the taskbar or dock (`Unity.LauncherEntry` D-Bus signal), rather than placing a separate icon in the system tray (`StatusNotifierItem`).
+* **True Headless Operation:**
+  Unlike Birdtray and SysTray-X—which require the full Thunderbird or Betterbird GUI process to remain open and hidden in RAM—`mail-badge-notifier` decouples unread tracking into a lightweight background `systemd` user service. You can completely close the mail client window and still receive live badge updates.
+* **Native Wayland & KWin Compatibility:**
+  Because it never attempts to hide, minimize, or manipulate application windows, it requires no KWin scripts or X11 fallbacks and works seamlessly across Wayland and X11 compositors.
+* **Accurate Unread Count:**
+  Instead of parsing binary `.msf` index files from disk (which can desync during folder compaction), it reads the exact unread count directly via the WebExtension API and background bridge.
+
 This project is a heavily refactored, modernized, and XDG-compliant fork of [bakatamas/mail-badge-bridge](https://github.com/bakatamas/mail-badge-bridge).
 
 ---
